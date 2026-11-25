@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DDR5 16GB 실시간 가격 트래커</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --card: #ffffff;
+      --text: #1e293b;
+      --muted: #64748b;
+      --primary: #2563eb;
+      --accent: #059669;
+      --border: #e2e8f0;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Malgun Gothic", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 24px 16px;
+      line-height: 1.5;
+    }
+    .container { max-width: 1080px; margin: 0 auto; }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+    h1 { font-size: 1.5rem; font-weight: 700; }
+    .updated { font-size: 0.875rem; color: var(--muted); }
+    .grid-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    }
+    .card-label { font-size: 0.82rem; color: var(--muted); margin-bottom: 6px; }
+    .card-value { font-size: 1.45rem; font-weight: 700; }
+    .card-sub { font-size: 0.8rem; color: var(--muted); margin-top: 4px; word-break: keep-all; }
+    .highlight { color: var(--primary); }
+    .green { color: var(--accent); }
+    .grid-main {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    @media (max-width: 820px) { .grid-main { grid-template-columns: 1fr; } }
+    h2 { font-size: 1.05rem; margin-bottom: 14px; }
+    .chart-wrap { position: relative; height: 300px; }
+    .rank-list { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+    .rank-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 12px;
+      background: var(--bg);
+      border-radius: 8px;
+      font-size: 0.92rem;
+    }
+    .badge {
+      display: inline-block;
+      width: 22px; height: 22px;
+      line-height: 22px;
+      text-align: center;
+      border-radius: 50%;
+      background: var(--primary);
+      color: #fff;
+      font-size: 0.78rem;
+      font-weight: 700;
+      margin-right: 8px;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 600; font-size: 0.82rem; }
+    td.price { font-weight: 700; white-space: nowrap; }
+    .error { color: #dc2626; background: #fef2f2; padding: 14px; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>DDR5 16GB 가격 모니터링</h1>
+      </div>
+      <div class="updated" id="lastUpdated">데이터 불러오는 중...</div>
+    </header>
+
+    <div id="errorBox"></div>
+
+    <section class="grid-cards">
+      <div class="card">
+        <div class="card-label">최근 최저가</div>
+        <div class="card-value highlight" id="latestLowest">-</div>
+        <div class="card-sub" id="latestStore">-</div>
+      </div>
+      <div class="card">
+        <div class="card-label">최근 상위 평균가</div>
+        <div class="card-value" id="latestAvg">-</div>
+        <div class="card-sub" id="latestSample">-</div>
+      </div>
+      <div class="card">
+        <div class="card-label">역대 최저가 (수집 기간 내)</div>
+        <div class="card-value green" id="allTimeLowest">-</div>
+        <div class="card-sub" id="allTimeDate">-</div>
+      </div>
+      <div class="card">
+        <div class="card-label">총 수집 회차</div>
+        <div class="card-value" id="totalRuns">-</div>
+        <div class="card-sub">매일 09:00 / 21:00 자동 수집</div>
+      </div>
+    </section>
+
+    <section class="grid-main">
+      <div class="card">
+        <h2>최저가 및 상위 평균가 추이</h2>
+        <div class="chart-wrap">
+          <canvas id="priceChart"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <h2>최저가 최다 기록 업체 Top 3</h2>
+        <ul class="rank-list" id="topStores"></ul>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>최근 회차 상위 상품 목록 (Top 10)</h2>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>순위</th>
+              <th>가격</th>
+              <th>판매처</th>
+              <th>상품명</th>
+            </tr>
+          </thead>
+          <tbody id="top10Body"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const fmtKRW = (n) => Number(n).toLocaleString("ko-KR") + "원";
+
+    function loadCSV(path) {
+      return new Promise((resolve, reject) => {
+        Papa.parse(path + "?t=" + Date.now(), {
+          download: true,
+          header: true,
+          skipEmptyLines: true,
+          complete: (res) => resolve(res.data),
+          error: (err) => reject(err)
+        });
+      });
+    }
+
+    async function init() {
+      try {
+        const [summaryRows, top10Rows] = await Promise.all([
+          loadCSV("data/prices_summary.csv"),
+          loadCSV("data/prices_top10.csv")
+        ]);
+
+        if (!summaryRows.length) return;
+
+        const latest = summaryRows[summaryRows.length - 1];
+        document.getElementById("lastUpdated").textContent = "최근 업데이트: " + latest.checked_at;
+        document.getElementById("latestLowest").textContent = fmtKRW(latest.lowest_price);
+        document.getElementById("latestStore").textContent = `${latest.lowest_store} · ${latest.lowest_title}`;
+        document.getElementById("latestAvg").textContent = fmtKRW(latest.top_avg_price);
+        document.getElementById("latestSample").textContent = `상위 ${latest.avg_sample_count}개 평균 (필터 통과 ${latest.matched_count}개)`;
+        document.getElementById("totalRuns").textContent = summaryRows.length + "회";
+
+        // 역대 최저가
+        const minRow = summaryRows.reduce((min, r) =>
+          Number(r.lowest_price) < Number(min.lowest_price) ? r : min
+        , summaryRows[0]);
+        document.getElementById("allTimeLowest").textContent = fmtKRW(minRow.lowest_price);
+        document.getElementById("allTimeDate").textContent = `${minRow.checked_at} (${minRow.lowest_store})`;
+
+        // 최저가 최다 업체 Top 3
+        const storeCounts = {};
+        summaryRows.forEach(r => {
+          const s = (r.lowest_store || "미상").trim();
+          storeCounts[s] = (storeCounts[s] || 0) + 1;
+        });
+        const sortedStores = Object.entries(storeCounts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3);
+
+        const rankList = document.getElementById("topStores");
+        sortedStores.forEach(([store, count], idx) => {
+          const li = document.createElement("li");
+          li.className = "rank-item";
+          li.innerHTML = `<span><span class="badge">${idx + 1}</span>${store}</span><strong>${count}회</strong>`;
+          rankList.appendChild(li);
+        });
+
+        // 추이 차트
+        const labels = summaryRows.map(r => r.checked_at.slice(5, 16));
+        const lowestData = summaryRows.map(r => Number(r.lowest_price));
+        const avgData = summaryRows.map(r => Number(r.top_avg_price));
+
+        new Chart(document.getElementById("priceChart"), {
+          type: "line",
+          data: {
+            labels,
+            datasets: [
+              {
+                label: "최저가 (원)",
+                data: lowestData,
+                borderColor: "#2563eb",
+                backgroundColor: "rgba(37, 99, 235, 0.1)",
+                tension: 0.25,
+                fill: true,
+                pointRadius: 4
+              },
+              {
+                label: "상위 평균가 (원)",
+                data: avgData,
+                borderColor: "#10b981",
+                borderDash: [5, 5],
+                tension: 0.25,
+                pointRadius: 3
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: "index", intersect: false },
+            plugins: {
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => `${ctx.dataset.label}: ${fmtKRW(ctx.parsed.y)}`
+                }
+              }
+            },
+            scales: {
+              y: {
+                ticks: { callback: (v) => Number(v).toLocaleString("ko-KR") + "원" }
+              }
+            }
+          }
+        });
+
+        // 최신 회차 Top 10 테이블
+        const latestTime = latest.checked_at;
+        const latestTop10 = top10Rows.filter(r => r.checked_at === latestTime);
+        const tbody = document.getElementById("top10Body");
+        latestTop10.forEach(r => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${r.rank}</td>
+            <td class="price">${fmtKRW(r.price)}</td>
+            <td>${r.store}</td>
+            <td>${r.title}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (e) {
+        document.getElementById("errorBox").innerHTML =
+          `<div class="error">CSV 데이터를 불러오지 못했습니다. data 폴더와 파일 경로를 확인해 주세요.</div>`;
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>
