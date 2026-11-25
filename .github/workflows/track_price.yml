@@ -3,7 +3,7 @@ name: DDR5 16GB Price Tracker
 on:
   schedule:
     # UTC 기준 00:00, 12:00 실행 -> 한국 시각(KST) 매일 오전 9시, 오후 9시
-    - cron: '0 0,12 * * *'
+    - cron: '50 12,0 * * *'
   workflow_dispatch: # 수동 테스트 실행 버튼 활성화
 
 permissions:
