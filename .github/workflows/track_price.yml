@@ -1,0 +1,39 @@
+name: DDR5 16GB Price Tracker
+
+on:
+  schedule:
+    # UTC 기준 00:00, 12:00 실행 -> 한국 시각(KST) 매일 오전 9시, 오후 9시
+    - cron: '0 0,12 * * *'
+  workflow_dispatch: # 수동 테스트 실행 버튼 활성화
+
+permissions:
+  contents: write
+
+jobs:
+  track:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run price tracker
+        env:
+          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
+        run: python track_price.py
+
+      - name: Commit and push updated CSVs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git diff --staged --quiet || git commit -m "Update DDR5 16GB price data"
+          git push
